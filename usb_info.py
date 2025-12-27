@@ -23,10 +23,9 @@ _USB_VER_EXTRACT_RE = re.compile(r"(3\.[0-2]|2\.0)", re.IGNORECASE)
 
 def _run_pnputil_direct() -> str:
     """
-    Directly run pnputil without PowerShell overhead.
+    调用 pnputil 获取系统连接设备属性
     """
     try:
-        # Use default system encoding (often mbcs/cp936 on Chinese Windows)
         p = subprocess.run(
             ["pnputil", "/enum-devices", "/connected", "/properties"],
             capture_output=True,
@@ -42,19 +41,16 @@ def _run_pnputil_direct() -> str:
 
 def _get_wmi_usb_devices() -> List[Dict[str, Any]]:
     """
-    Use COM (win32com) to query WMI, which is much faster than spawning PowerShell.
+    通过 WMI 接口查询 USB 实体设备信息
     """
     pythoncom.CoInitialize()
     try:
         wmi = win32com.client.GetObject("winmgmts:")
-        # Query for all USB devices.
-        # Note: PNPDeviceID LIKE 'USB%' covers standard USB devices.
         query = "SELECT Name, Manufacturer, PNPDeviceID, Service, Description FROM Win32_PnPEntity WHERE PNPDeviceID LIKE 'USB%'"
         items = wmi.ExecQuery(query)
 
         results = []
         for item in items:
-            # WMI items might throw error on access if device disconnects during query
             try:
                 res = {
                     "Name": item.Name,
@@ -162,7 +158,7 @@ def _get_pnputil_properties_map() -> Dict[str, Dict[str, Any]]:
         if not cur_id_norm:
             continue
 
-        # 2. 检查基本的设备描述（这里通常就含有 USB 3.0 字样）
+        # 2. 检查基本的设备描述
         m_desc = re_desc_line.match(line_stripped)
         if m_desc:
             ver = _extract_usb_version(m_desc.group(1))
@@ -176,7 +172,6 @@ def _get_pnputil_properties_map() -> Dict[str, Dict[str, Any]]:
                 ver = _extract_usb_version(line_stripped)
                 if ver: cur_data["usb_version_bcd"] = ver
             else:
-                # 数字类
                 val = None
                 m_hex = re_hex_val.search(line_stripped)
                 if m_hex:
@@ -213,10 +208,8 @@ def list_usb_devices(only_storage: bool = True) -> List[Dict[str, Any]]:
     if _cache_only_storage == only_storage and (now - _cache_at) < _CACHE_TTL_SEC:
         return list(_cache_devices)
 
-    # 1. Faster WMI Query
     rows = _get_wmi_usb_devices()
 
-    # 2. Get detailed props from pnputil (this is the slower part, but optimized by removing PS wrapper)
     pnputil_map = {}
     try:
         pnputil_map = _get_pnputil_properties_map()
@@ -246,7 +239,7 @@ def list_usb_devices(only_storage: bool = True) -> List[Dict[str, Any]]:
             bus = info.get("bus")
             usb_version_bcd = info.get("usb_version_bcd")
 
-        # 如果 pnputil 没提取到版本，尝试从 WMI 的 Name 提取
+        # 如果 pnputil 没提取到版本，从 WMI 的 Name 提取
         if not usb_version_bcd and name:
             usb_version_bcd = _extract_usb_version(name)
 
@@ -257,7 +250,7 @@ def list_usb_devices(only_storage: bool = True) -> List[Dict[str, Any]]:
                 "manufacturer": r.get("Manufacturer"),
                 "product": name,
                 "serial_number": serial,
-                "usb_version_bcd": usb_version_bcd,  # 这里存放提取出的版本字符串
+                "usb_version_bcd": usb_version_bcd,  # 存放提取出的版本字符串
                 "bus": bus,
                 "address": address,
                 "pnp_device_id": pnp,

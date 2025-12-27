@@ -16,8 +16,7 @@ class DriveEvent:
 
 def get_removable_drives() -> list[str]:
     """
-    WMI 查询当前可移动盘（DriveType=2）
-    返回如 ["G:", "H:"]（不带反斜杠）
+    WMI 查询当前可移动盘
     """
     pythoncom.CoInitialize()
     try:
@@ -32,11 +31,7 @@ def get_removable_drives() -> list[str]:
 
 class WmiDriveEventWatcher:
     """
-    WMI 事件监听：Win32_VolumeChangeEvent
-    为了减少 pywin32 “releasing IUnknown” 红字：
-    - stop() 时通过 pythoncom.CoCancelCall 取消阻塞等待
-    - 显式释放 COM 引用
-    - join() 等待线程退出
+    Win32_VolumeChangeEvent 监听器
     """
 
     def __init__(self, on_event: Callable[[DriveEvent], None]):
@@ -77,7 +72,6 @@ class WmiDriveEventWatcher:
         self._thread_id = threading.get_native_id()
 
         try:
-            # DispatchEx：更干净的独立 COM 实例
             locator = win32com.client.DispatchEx("WbemScripting.SWbemLocator")
             service = locator.ConnectServer(".", "root\\cimv2")
             self._service = service
@@ -119,7 +113,7 @@ class WmiDriveEventWatcher:
                 self.on_event(DriveEvent(action=action, drive_letter=drive_letter))
 
         finally:
-            # 显式释放 COM 引用
+            # 释放 COM 引用
             self._watcher = None
             self._service = None
 

@@ -32,7 +32,7 @@ def list_files(drive_path: str, show_hidden: bool = True) -> list[dict]:
     """
     files = []
     try:
-        # 使用 scandir 获取更详细的文件信息
+        # 使用 scandir 获取详细的文件信息
         with os.scandir(drive_path) as it:
             for entry in it:
                 # 判断是否为隐藏文件

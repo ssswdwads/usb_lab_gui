@@ -16,7 +16,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("USB 总线与挂载设备测试（Windows/WMI事件版）")
-        self.geometry("980x760")  # 稍微加高一点以适应内容
+        self.geometry("980x760")
 
         self.selected_usb_mount = tk.StringVar(value="")
         # 默认只显示存储设备
@@ -234,8 +234,6 @@ class App(tk.Tk):
 
     def _refresh_usb_devices_thread(self):
         try:
-            # 这里的 logic 是：only_storage_var.get() 返回 True/False
-            # usb_info.list_usb_devices 内部会根据这个 bool 值过滤
             devs = list_usb_devices(only_storage=self.only_storage_var.get())
             self.after(0, lambda: self._update_usb_tree(devs))
         except Exception as e:
@@ -269,8 +267,6 @@ class App(tk.Tk):
         for item in self.usb_tree.get_children():
             self.usb_tree.delete(item)
         self._log(f"USB设备刷新失败：{error_msg}")
-        # MessageBox works but can interrupt flow, logging is safer for auto-refresh
-        # messagebox.showerror("错误", f"USB设备刷新失败：\n{error_msg}", parent=self)
 
     def _refresh_mounts(self):
         drives = get_removable_drives()
@@ -453,7 +449,7 @@ class App(tk.Tk):
                     self.after(0, lambda: self._copy_complete(src, dst))
 
                 except Exception as e:
-                    # [关键修复] 将异常转换为字符串，确保 lambda 绑定的是值而不是引用
+                    # 将异常转换为字符串，确保 lambda 绑定的是值而不是引用
                     err_msg = str(e)
                     self.after(0, lambda: self._copy_failed(err_msg))
 
