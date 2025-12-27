@@ -1,118 +1,63 @@
-# USB 总线及挂载设备测试实验（Windows / Python / GUI）
+# USB 总线与挂载设备测试 GUI (Windows 版)
 
-本项目用于完成《汇编语言与接口技术》课程大作业中的 **USB 总线及挂载设备测试实验**：在 Windows 平台上通过 GUI 检测 USB 设备与 U 盘插拔，并对 U 盘进行读写/拷贝/删除等操作。
+本项目为 **北京理工大学《汇编语言与接口技术》大作业 - 实验二** 的实现方案。基于 Python 语言和 Tkinter 框架开发，旨在通过 GUI 界面直观地展示 USB 总线的属性、设备挂载机制、热插拔检测以及文件交互功能。
 
-> 当前实现目标：先在 Windows 上完成“必选功能”的可运行版本；后续可扩展 Linux 版本与更多展示功能。
+## 🚀 主要功能
 
----
+- **用户信息识别**：自动显示当前系统登录的用户名。
+- **深度设备检测**：
+    - 扫描系统中所有连接的 USB 设备。
+    - 提取关键信息：VID (Vendor ID)、PID (Product ID)、制造商、产品名称、序列号、挂载总线编号 (Bus Number) 及 端口地址 (Address)。
+    - **USB 版本探测**：通过解析 `pnputil` 属性，识别设备支持的 USB 版本（如 3.0/2.1/2.0）。
+- **实时热插拔监听**：
+    - 基于 WMI 事件驱动机制，实时捕获 U 盘的插入与拔出动作。
+    - 自动刷新盘符列表及设备信息。
+- **文件系统交互**：
+    - **文件列表浏览**：支持查看 U 盘内所有文件，可选显示系统隐藏文件。
+    - **数据写入**：支持向 U 盘指定路径写入测试文本。
+    - **文件删除**：支持删除 U 盘中的文件或文件夹。
+    - **带进度的文件拷贝**：支持从本地向 U 盘传输大文件，并提供**实时传输速率 (MB/s)**、**进度条百分比**及**预计剩余时间**显示。
 
-## 1. 当前已实现功能
+## 🛠️ 技术栈
 
-### 1) GUI 界面
-- 使用 **Tkinter**（Python 自带 GUI 库）构建窗口界面
+- **开发语言**：Python 3.x
+- **GUI 框架**：Tkinter / ttk
+- **底层驱动接口**：
+    - **WMI (Windows Management Instrumentation)**：用于监听 `Win32_VolumeChangeEvent` 及查询 `Win32_PnPEntity`。
+    - **pnputil (系统工具)**：用于获取 WMI 无法直接提供的 Bus/Address 等硬件拓扑属性。
+    - **pywin32**：处理 Windows COM 对象的生命周期。
+- **多线程模型**：UI 线程、WMI 监控线程、后台文件 IO 线程分工协作，确保拷贝大文件时界面不卡死。
 
-### 2) 显示当前登录用户
-- 界面顶部显示 Windows 当前登录用户名
+## 📂 文件结构
 
-### 3) 检测 USB 设备信息（面向实验：重点显示 U 盘）
-- 左侧显示 USB 设备列表
-- **默认只显示 USB 存储设备（USBSTOR）**：也就是 U 盘/移动硬盘这类“U盘相关设备”
-- 可通过勾选框切换（扩展时可做成“显示全部 USB 设备”）
+```text
+.
+├── app.py              # 程序主入口，负责 GUI 布局与逻辑调度
+├── usb_info.py         # 硬件信息采集模块（WMI + pnputil 解析）
+├── storage_monitor.py  # U 盘插拔监控模块（WMI 事件监听）
+├── file_ops.py         # 文件操作封装模块（包含带回调的拷贝逻辑）
+└── README.md           # 项目说明文档
+```
 
-> 说明：本项目采用 **Windows 原生 WMI** 获取 USB 设备信息（不依赖 pyusb/libusb 后端），稳定可靠，适合课程作业展示。
+## ⚙️ 环境配置与运行
 
-### 4) 检测 U 盘插入 / 拔出（实时）
-- 使用 **WMI 事件监听（Win32_VolumeChangeEvent）** 实现事件驱动检测
-- 插入/拔出时弹出提示框，并写入右侧日志
+### 1. 依赖安装
+本项目依赖 `pywin32` 库以调用 Windows API。
+```bash
+pip install pywin32
+```
 
-### 5) 对 U 盘进行基本文件操作
-- 写入简单文本（如 `hello.txt`）
-- 选择文件拷贝到 U 盘（显示进度与速度）
-- 删除 U 盘上的文件/目录
-
----
-
-## 2. 技术方案
-
-- **GUI**：Tkinter
-- **U盘插拔检测**：WMI 事件监听（实时，低开销）
-- **U盘盘符识别**：WMI `Win32_LogicalDisk` 的 `DriveType=2`（可移动盘）
-- **USB 设备信息枚举**：WMI `Win32_PnPEntity`，并按 `Service=USBSTOR` 过滤显示 U 盘相关设备
-- **文件拷贝速率**：应用层分块复制 + 计算吞吐（MB/s）
-
----
-
-## 3. 环境要求
-
-- Windows 10 / Windows 11
-- Python 3.10+（建议）
-- 需要安装依赖：
-  - `psutil`
-  - `pywin32`
-
----
-
-## 4. 安装与运行（推荐使用虚拟环境）
-
-在项目根目录打开 CMD：
-
-```bat
-py -m venv .venv
-.\.venv\Scripts\activate.bat
-python -m pip install -U pip
-pip install -r requirements.txt
+### 2. 运行程序
+请确保在 **Windows 操作系统** 下运行，并建议以 **管理员权限** 运行（部分硬件拓扑信息的获取需要 `pnputil` 权限）。
+```bash
 python app.py
 ```
 
-> PyCharm 用户：请在 **Settings → Project → Python Interpreter** 选择项目的  
-> `.venv\Scripts\python.exe` 作为解释器，否则会出现 “No module named psutil”等错误。
+## 📝 核心实现原理说明
 
----
+1.  **USB 属性关联**：标准的 WMI 查询无法直接给出 USB 版本。本项目通过 `pnputil /enum-devices` 获取硬件属性，利用正则表达式从设备描述中提取版本特征，并根据 `InstanceID` 将其与 `Win32_PnPEntity` 的基础信息进行关联。
+2.  **异步 IO 进度**：在 `file_ops.py` 中实现了分块读取的拷贝函数，通过计算 `delta_bytes / delta_time` 获得瞬时速率，并利用 `app.after()` 机制将进度安全地推送到主 UI 线程进行渲染。
 
-## 5. 项目结构说明
+## ⚖️ 许可证
 
-```
-.
-├─ app.py                 # 主程序：GUI + 事件响应 + 调用各模块
-├─ usb_info.py            # USB设备信息枚举（WMI），默认只返回 USBSTOR（U盘类设备）
-├─ storage_monitor.py     # WMI事件监听：检测U盘插入/拔出；查询可移动盘符
-├─ file_ops.py            # U盘文件操作：写入文本/拷贝文件(含速率)/删除
-├─ requirements.txt
-├─ README.md
-└─ .gitignore
-```
-
-
-
-1) **显示 U 盘文件列表（含隐藏文件）**  
-- 建议加在：`file_ops.py` 新增 `list_files(root, show_hidden=True/False)`  
-- GUI 展示加在：`app.py` 右侧新增 Tree/List 控件
-
-2) **拷贝/读写时更详细的实时速率曲线、进度条**  
-- 现有：`file_ops.copy_with_progress()` 已提供回调  
-- 可在 `app.py` 增加 `ttk.Progressbar` + 速率曲线/历史数据
-
-3) **USB 设备更完整字段（厂商、序列号更可靠、USB版本/速度）**
-- Windows 下可扩展 WMI 关联查询：
-  - `Win32_DiskDrive`（Model、InterfaceType=USB 等）
-  - `Win32_DiskDriveToDiskPartition` → `Win32_LogicalDiskToPartition`（把物理U盘关联到盘符）
-- Linux 下可新增 `linux_usb_info.py`（使用 `pyusb` / `lsusb -v`）
-
-4) **只显示“当前插入的U盘”并显示其盘符/容量/文件系统**
-- 建议改造方式：在 `usb_info.py` 中通过 WMI 关联把 USBSTOR 设备映射到逻辑盘符，再在 GUI 里合并显示
-
----
-
-
-
-### 剩余需要添加功能
-- 实现 USB 总线编号、接口编号、USB 协议版本的精确抓取,目前 usb_info.py 中的 bus、address 和 usb_version_bcd 字段都是 None
-- 可加可不加：在 UI 上增加 U 盘总容量、剩余空间显示，并随文件操作动态更新。
-- 可加可不加：增加“从 U 盘拷出文件”功能，并支持文件的重命名和批量删除，实现“安全弹出”功能，支持操作日志的一键导出。
----
-
-## 6. 已知限制（可在报告中说明）
-
-- Windows 用户态很难稳定获取“USB协议层真实传输速率”；本项目展示的是**文件拷贝的实际吞吐**，更贴近用户体验
-- 部分设备可能不提供可解析的序列号/厂商字段（由系统/驱动/设备决定）
-
+本项目仅用于北京理工大学课程实验教学，遵循 MIT 开源协议。
