@@ -24,6 +24,8 @@ def get_removable_drives() -> list[str]:
         wmi = win32com.client.GetObject("winmgmts:")
         items = wmi.ExecQuery("SELECT DeviceID FROM Win32_LogicalDisk WHERE DriveType = 2")
         return [i.DeviceID for i in items]
+    except Exception:
+        return []
     finally:
         pythoncom.CoUninitialize()
 
@@ -43,7 +45,6 @@ class WmiDriveEventWatcher:
         self._thread: Optional[threading.Thread] = None
         self._thread_id: Optional[int] = None
 
-        # 线程内 COM 引用（用于显式释放）
         self._service = None
         self._watcher = None
 
@@ -57,18 +58,15 @@ class WmiDriveEventWatcher:
     def stop(self, join_timeout_sec: float = 2.0) -> None:
         self._stop.set()
 
-        # 尝试取消线程里 NextEvent 的阻塞等待（如果正在等待）
         if self._thread_id is not None:
             try:
                 pythoncom.CoCancelCall(self._thread_id, 0)
             except Exception:
-                # 某些情况下会失败（例如不在等待），忽略即可
                 pass
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=join_timeout_sec)
 
-        # 主线程侧也清掉引用（双保险）
         self._service = None
         self._watcher = None
         self._thread = None
@@ -79,7 +77,8 @@ class WmiDriveEventWatcher:
         self._thread_id = threading.get_native_id()
 
         try:
-            locator = win32com.client.Dispatch("WbemScripting.SWbemLocator")
+            # DispatchEx：更干净的独立 COM 实例
+            locator = win32com.client.DispatchEx("WbemScripting.SWbemLocator")
             service = locator.ConnectServer(".", "root\\cimv2")
             self._service = service
 
@@ -89,10 +88,8 @@ class WmiDriveEventWatcher:
 
             while not self._stop.is_set():
                 try:
-                    # 1000ms 超时：便于定期检查 stop
                     evt = watcher.NextEvent(1000)
                 except Exception:
-                    # 可能是超时/取消/临时错误，继续循环
                     continue
 
                 drive_name = getattr(evt, "DriveName", None)  # e.g. "G:\"
@@ -108,7 +105,6 @@ class WmiDriveEventWatcher:
                 else:
                     continue
 
-                # 插入过滤：避免光驱/网络盘；拔出不过滤（盘符可能已不存在）
                 if action == "inserted":
                     try:
                         items = service.ExecQuery(
@@ -123,7 +119,14 @@ class WmiDriveEventWatcher:
                 self.on_event(DriveEvent(action=action, drive_letter=drive_letter))
 
         finally:
-            # 显式释放 COM 引用，减少“退出时释放”触发的噪声
+            # 显式释放 COM 引用
             self._watcher = None
             self._service = None
+
+            try:
+                import gc
+                gc.collect()
+            except Exception:
+                pass
+
             pythoncom.CoUninitialize()

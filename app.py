@@ -24,6 +24,7 @@ class App(tk.Tk):
         self.show_hidden_var = tk.BooleanVar(value=True)
 
         self._refresh_timer_id = None
+        self._usb_refresh_thread = None
 
         self._build_ui()
         self._refresh_user()
@@ -56,7 +57,8 @@ class App(tk.Tk):
         self.user_label = ttk.Label(top, text="(unknown)")
         self.user_label.pack(side="left")
 
-        ttk.Button(top, text="刷新USB设备", command=self._refresh_usb_devices).pack(side="right")
+        self.btn_refresh_usb = ttk.Button(top, text="刷新USB设备", command=self._refresh_usb_devices)
+        self.btn_refresh_usb.pack(side="right")
         ttk.Button(top, text="刷新U盘列表", command=self._refresh_mounts).pack(side="right", padx=(0, 8))
 
         main = ttk.PanedWindow(self, orient="horizontal")
@@ -219,32 +221,56 @@ class App(tk.Tk):
         self.user_label.config(text=getpass.getuser())
 
     def _refresh_usb_devices(self):
+        """Start refreshing USB devices in a background thread."""
+        self.btn_refresh_usb.config(state="disabled")
+
+        # UI feedback
         for item in self.usb_tree.get_children():
             self.usb_tree.delete(item)
+        self.usb_tree.insert("", "end", values=("加载中...", "", "", "", "", "", "", ""))
+
+        thread = threading.Thread(target=self._refresh_usb_devices_thread, daemon=True)
+        thread.start()
+
+    def _refresh_usb_devices_thread(self):
         try:
             # 这里的 logic 是：only_storage_var.get() 返回 True/False
             # usb_info.list_usb_devices 内部会根据这个 bool 值过滤
             devs = list_usb_devices(only_storage=self.only_storage_var.get())
-            for d in devs:
-                self.usb_tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        d.get("vendor_id"),
-                        d.get("product_id"),
-                        d.get("manufacturer"),
-                        d.get("product"),
-                        d.get("serial_number"),
-                        d.get("usb_version_bcd"),
-                        d.get("bus"),
-                        d.get("address"),
-                    ),
-                )
-            filter_status = " (仅存储)" if self.only_storage_var.get() else " (全部)"
-            self._log(f"USB设备刷新完成：{len(devs)} 个设备{filter_status}")
+            self.after(0, lambda: self._update_usb_tree(devs))
         except Exception as e:
-            self._log(f"USB设备刷新失败：{e}")
-            messagebox.showerror("错误", f"USB设备刷新失败：\n{e}", parent=self)
+            self.after(0, lambda: self._on_usb_refresh_error(str(e)))
+
+    def _update_usb_tree(self, devs):
+        self.btn_refresh_usb.config(state="normal")
+        for item in self.usb_tree.get_children():
+            self.usb_tree.delete(item)
+
+        for d in devs:
+            self.usb_tree.insert(
+                "",
+                "end",
+                values=(
+                    d.get("vendor_id"),
+                    d.get("product_id"),
+                    d.get("manufacturer"),
+                    d.get("product"),
+                    d.get("serial_number"),
+                    d.get("usb_version_bcd"),
+                    d.get("bus"),
+                    d.get("address"),
+                ),
+            )
+        filter_status = " (仅存储)" if self.only_storage_var.get() else " (全部)"
+        self._log(f"USB设备刷新完成：{len(devs)} 个设备{filter_status}")
+
+    def _on_usb_refresh_error(self, error_msg):
+        self.btn_refresh_usb.config(state="normal")
+        for item in self.usb_tree.get_children():
+            self.usb_tree.delete(item)
+        self._log(f"USB设备刷新失败：{error_msg}")
+        # MessageBox works but can interrupt flow, logging is safer for auto-refresh
+        # messagebox.showerror("错误", f"USB设备刷新失败：\n{error_msg}", parent=self)
 
     def _refresh_mounts(self):
         drives = get_removable_drives()
@@ -295,10 +321,6 @@ class App(tk.Tk):
                     'end',
                     values=(f['name'], size_str, f_type, f['modified'], f_hidden)
                 )
-
-            # 更新日志状态
-            # self._log(f"文件列表已更新")
-
         except Exception as e:
             self._log(f"刷新文件列表失败：{e}")
 
@@ -492,19 +514,23 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
-    # 配置进度条样式
     try:
-        # DPI 适配（可选）
-        from ctypes import windll
+        # 配置进度条样式
+        try:
+            from ctypes import windll
 
-        windll.shcore.SetProcessDpiAwareness(1)
-    except:
+            windll.shcore.SetProcessDpiAwareness(1)
+        except:
+            pass
+
+        app = App()
+
+        style = ttk.Style()
+        style.configure("green.Horizontal.TProgressbar", background='green')
+        style.configure("red.Horizontal.TProgressbar", background='red')
+
+        app.mainloop()
+    except KeyboardInterrupt:
         pass
-
-    app = App()
-
-    style = ttk.Style()
-    style.configure("green.Horizontal.TProgressbar", background='green')
-    style.configure("red.Horizontal.TProgressbar", background='red')
-
-    app.mainloop()
+    except Exception as e:
+        print(f"程序运行出错: {e}")
